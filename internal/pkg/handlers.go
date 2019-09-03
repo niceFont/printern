@@ -2,6 +2,7 @@ package internal
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
@@ -41,7 +42,7 @@ func PrinterHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	fmt.Println(pr.JobTitle)
 	internal.DispatchCrawlers(pr)
 
 }

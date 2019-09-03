@@ -29,7 +29,7 @@ window.onload = function () {
             body: JSON.stringify(body)
         })
 
-        console.log(response.json(4))
+        console.log(response.json())
     }
 
 
