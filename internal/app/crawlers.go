@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"time"
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
@@ -15,14 +16,17 @@ import (
 
 //IndeedCrawler struct implements Crawler interface
 type IndeedCrawler struct {
+	Data []map[string]string
 }
 
 //Scrape function for indeed.com
-func (is *IndeedCrawler) Scrape(pr *PrinterRequest) {
+func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 	ctx, cancel := chromedp.NewContext(
 		context.Background(),
 		chromedp.WithLogf(log.Printf),
 	)
+
+	ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 
 	defer cancel()
 
@@ -39,15 +43,14 @@ func (is *IndeedCrawler) Scrape(pr *PrinterRequest) {
 	}
 
 	fmt.Println("test")
-
-	var testing string
+	foundNum := 0
 	var panels []*cdp.Node
-	for j := 2; j < 10; j++ {
+	for j := 2; j < 4; j++ {
 		fmt.Printf("Currently Fetching Page: %d\n\n", j-1)
 		sel := `//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')]`
 		if err := chromedp.Run(ctx,
 			chromedp.EmulateViewport(1920, 2000),
-			chromedp.WaitVisible(sel),
+			chromedp.WaitReady(sel),
 			chromedp.Nodes(sel, &panels),
 		); err != nil {
 			log.Fatal(err)
@@ -57,28 +60,55 @@ func (is *IndeedCrawler) Scrape(pr *PrinterRequest) {
 		sel = fmt.Sprintf(`//div[@class="pagination"]/a/span[text()="%d"]`, j)
 
 		for index, node := range panels {
-
+			var html string
+			var company string
 			if err := chromedp.Run(ctx,
 				chromedp.EmulateViewport(1920, 2000),
 				chromedp.MouseClickNode(node),
-				chromedp.WaitVisible("#vjs-jobtitle", chromedp.ByID),
-				chromedp.Text("#vjs-jobtitle", &testing, chromedp.ByID),
+				chromedp.WaitVisible(`//div[@id="vjs-desc"]`),
+				chromedp.InnerHTML(`//div[@id="vjs-desc"]`, &html),
+				chromedp.Text(`//span[@id="vjs-cn"]`, &company),
 			); err != nil {
 				log.Printf("Node %d failed.", index)
 			}
 
-			fmt.Printf("Result: %s\n", testing)
+			ic.ProcessData(company, html, &foundNum)
+			fmt.Println(company)
+			foundNum = foundNum + 1
 		}
 		chromedp.Run(ctx,
-			chromedp.WaitVisible("#vjs-desc", chromedp.ByID),
+			chromedp.WaitVisible(sel),
 			chromedp.Click(sel, chromedp.NodeVisible),
 			chromedp.WaitNotPresent("body", chromedp.BySearch),
 		)
-		crawlerCapture(&ctx)
 	}
+
+	WriteJSON(ic.Data)
+}
+
+//ProcessData adds data to Crawler
+func (ic *IndeedCrawler) ProcessData(key interface{}, value interface{}, index *int) {
+	if key != "" || value != "" {
+		if len(ic.Data) == 0 {
+			ic.Data = make([]map[string]string, 1)
+		}
+		if cap(ic.Data) == len(ic.Data) {
+			n := make([]map[string]string, cap(ic.Data)+1)
+			copy(n, ic.Data)
+			ic.Data = n
+		}
+
+		ic.Data[*index] = make(map[string]string)
+
+		ic.Data[*index][key.(string)] = value.(string)
+		return
+	}
+
+	*index = *index - 1
 
 }
 
+//DispatchCrawlers dispatches concurrent Crawlers
 func DispatchCrawlers(pr *PrinterRequest) {
 	ic := IndeedCrawler{}
 	fmt.Println(pr.JobTitle)

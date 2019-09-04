@@ -9,4 +9,5 @@ type PrinterRequest struct {
 //Crawler interface
 type Crawler interface {
 	Scrape(PrinterRequest)
+	ProcessData(key interface{}, value interface{})
 }
