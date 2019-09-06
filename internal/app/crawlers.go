@@ -6,17 +6,20 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/google/uuid"
 )
 
 //IndeedCrawler struct implements Crawler interface
 type IndeedCrawler struct {
-	Data []map[string]string
+	ID   uuid.UUID
+	Data map[string]int
 }
 
 //Scrape function for indeed.com
@@ -26,7 +29,7 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 		chromedp.WithLogf(log.Printf),
 	)
 
-	ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
 
 	defer cancel()
 
@@ -45,17 +48,17 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 	fmt.Println("test")
 	foundNum := 0
 	var panels []*cdp.Node
-	for j := 2; j < 4; j++ {
+	for j := 2; j < 3; j++ {
 		fmt.Printf("Currently Fetching Page: %d\n\n", j-1)
 		sel := `//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')]`
 		if err := chromedp.Run(ctx,
 			chromedp.EmulateViewport(1920, 2000),
-			chromedp.WaitReady(sel),
+			chromedp.WaitReady(`//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')][17]`),
 			chromedp.Nodes(sel, &panels),
 		); err != nil {
-			log.Fatal(err)
-		}
+			log.Println(err)
 
+		}
 		fmt.Printf("%d Nodes Found.\n", len(panels))
 		sel = fmt.Sprintf(`//div[@class="pagination"]/a/span[text()="%d"]`, j)
 
@@ -72,48 +75,57 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 				log.Printf("Node %d failed.", index)
 			}
 
-			ic.ProcessData(company, html, &foundNum)
+			ic.ProcessData(html)
 			fmt.Println(company)
 			foundNum = foundNum + 1
 		}
-		chromedp.Run(ctx,
+		if err := chromedp.Run(ctx,
 			chromedp.WaitVisible(sel),
 			chromedp.Click(sel, chromedp.NodeVisible),
 			chromedp.WaitNotPresent("body", chromedp.BySearch),
-		)
+		); err != nil {
+			log.Println(err)
+		}
 	}
 
-	WriteJSON(ic.Data)
 }
 
 //ProcessData adds data to Crawler
-func (ic *IndeedCrawler) ProcessData(key interface{}, value interface{}, index *int) {
-	if key != "" || value != "" {
-		if len(ic.Data) == 0 {
-			ic.Data = make([]map[string]string, 1)
-		}
-		if cap(ic.Data) == len(ic.Data) {
-			n := make([]map[string]string, cap(ic.Data)+1)
-			copy(n, ic.Data)
-			ic.Data = n
-		}
+func (ic *IndeedCrawler) ProcessData(input string) {
+	var err error
 
-		ic.Data[*index] = make(map[string]string)
+	defer func() {
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
-		ic.Data[*index][key.(string)] = value.(string)
-		return
+	data := strings.Split(input, " ")
+
+	for _, item := range data {
+		if _, ok := ic.Data[strings.ToLower(item)]; ok {
+			ic.Data[strings.ToLower(item)]++
+		}
 	}
-
-	*index = *index - 1
 
 }
 
+func (ic *IndeedCrawler) GetData() ScrapeResult {
+	return ic.Data
+}
+
 //DispatchCrawlers dispatches concurrent Crawlers
-func DispatchCrawlers(pr *PrinterRequest) {
-	ic := IndeedCrawler{}
-	fmt.Println(pr.JobTitle)
+func DispatchCrawlers(pr *PrinterRequest) map[string]int {
+	ic, err := NewCrawler(0)
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ic.Scrape(pr)
+
+	return ic.GetData()
+
 }
 
 func crawlerCapture(ctx *context.Context) {
@@ -158,5 +170,28 @@ func crawlerCapture(ctx *context.Context) {
 	}
 	if err := ioutil.WriteFile("sc.png", buff, 0644); err != nil {
 		log.Fatal(err)
+	}
+}
+
+//NewCrawler creates a new Crawler based on the input given
+func NewCrawler(ctype int) (Crawler, error) {
+
+	var err error
+
+	switch ctype {
+	case 0:
+		list := make(map[string]int)
+
+		for _, keyword := range Keywords {
+			list[keyword] = 0
+		}
+		ic := &IndeedCrawler{
+			ID:   uuid.New(),
+			Data: list,
+		}
+
+		return ic, nil
+	default:
+		return nil, err
 	}
 }

@@ -43,6 +43,16 @@ func PrinterHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params
 		log.Fatal(err)
 	}
 	fmt.Println(pr.JobTitle)
-	internal.DispatchCrawlers(pr)
+	res := internal.DispatchCrawlers(pr)
 
+	response, err := json.Marshal(res)
+
+	if err != nil {
+		http.Error(w, "Error while Parsing Response", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Sending Response: %s", response)
+
+	w.Header().Set("Content-type", "application/json")
+	w.Write(response)
 }

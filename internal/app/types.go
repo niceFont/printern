@@ -8,6 +8,9 @@ type PrinterRequest struct {
 
 //Crawler interface
 type Crawler interface {
-	Scrape(PrinterRequest)
-	ProcessData(key interface{}, value interface{})
+	Scrape(*PrinterRequest)
+	ProcessData(string)
+	GetData() ScrapeResult
 }
+
+type ScrapeResult map[string]int

@@ -7,19 +7,11 @@ import (
 //Rnderer initiates the Render stuct and exposes it to the rest of the application
 var Rnderer *renderer.Render
 
-/*
-//Chrome Devtools Protocol
-var Chrome context.Context
-
-//ChromeCancel Function
-var ChromeCancel context.CancelFunc */
+var Keywords []string
 
 func init() {
 
-	/* Chrome, ChromeCancel = chromedp.NewContext(
-		context.Background(),
-		chromedp.WithLogf(log.Printf),
-	) */
+	Keywords = []string{"php", "javascript", "react", "c", "c++", "java", "c#", "angular", "nodejs"}
 
 	rndOptions := renderer.Options{
 		ParseGlobPattern: "./web/*.html",
