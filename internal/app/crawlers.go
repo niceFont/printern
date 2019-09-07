@@ -7,9 +7,9 @@ import (
 	"log"
 	"math"
 	"strings"
-	"time"
 
-	"github.com/chromedp/cdproto/cdp"
+	"github.com/sclevine/agouti"
+
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -24,107 +24,46 @@ type IndeedCrawler struct {
 
 //Scrape function for indeed.com
 func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
-	ctx, cancel := chromedp.NewContext(
-		context.Background(),
-		chromedp.WithLogf(log.Printf),
-	)
+	fmt.Println(pr.JobLocation)
+	var err error
 
-	ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
+	defer func() {
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
-	defer cancel()
+	locate := agouti.ChromeOptions("args", []string{"--disable-geolocation"})
 
-	fmt.Println(pr.JobTitle)
+	agoutiDriver := agouti.ChromeDriver(locate)
 
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate("https://de.indeed.com"),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Navigate Done")
-			return nil
-		}),
-		chromedp.WaitVisible(`#text-input-what`, chromedp.ByID),
-		chromedp.SetValue(`#text-input-what`, pr.JobTitle, chromedp.ByID),
-		chromedp.SetValue(`#text-input-where`, pr.JobLocation, chromedp.ByID),
-		chromedp.Submit(`icl-Button icl-Button--primary icl-Button--md icl-WhatWhere-button`),
-	); err != nil {
-		log.Fatal(err)
-	}
+	err = agoutiDriver.Start()
 
-	fmt.Println("test")
-	var panels []*cdp.Node
+	page, err := agoutiDriver.NewPage()
+	url := fmt.Sprintf("https://indeed.com/jobs?q=%s&l=%s", pr.JobTitle, pr.JobLocation)
+	linkhref := fmt.Sprintf(`//p[@class="oocs"]/a[contains(text(), "%s")]`, pr.JobTitle)
+	err = page.Navigate(url)
+	err = page.FindByXPath(linkhref).Click()
+
+	var sel string
 	var html string
-	var company string
-	for j := 2; j < 42; j++ {
-		fmt.Printf("Currently Fetching Page: %d\n\n", j-1)
-		sel := `//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')]`
-		if err := chromedp.Run(ctx,
-			chromedp.EmulateViewport(1920, 2000),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				log.Println("Waiting Nodes")
-				return nil
-			}),
-			chromedp.WaitVisible(`//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')]`),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				log.Println("Waiting Nodes Done")
-				return nil
-			}),
-			chromedp.Nodes(sel, &panels, chromedp.NodeVisible),
-		); err != nil {
-			log.Println(err)
-
-		}
-		fmt.Printf("%d Nodes Found.\n", len(panels))
-		sel = fmt.Sprintf(`//div[@class="pagination"]/a/span[text()="%d"]`, j)
-
-		for index, node := range panels {
-			if err := ctx.Err(); err != nil {
-				return
-			}
-			if err := chromedp.Run(ctx,
-				chromedp.EmulateViewport(1920, 2000),
-				chromedp.ActionFunc(func(ctx context.Context) error {
-					log.Println("Clicking Nodes")
-					return nil
-				}),
-				chromedp.MouseClickNode(node),
-				chromedp.ActionFunc(func(ctx context.Context) error {
-					log.Println("Clicking Nodes Done")
-					return nil
-				}),
-				chromedp.ActionFunc(func(ctx context.Context) error {
-					log.Println("Waiting Desc")
-					return nil
-				}),
-				chromedp.WaitReady(`//div[@id="vjs-desc"]`),
-				chromedp.ActionFunc(func(ctx context.Context) error {
-					log.Println("Waiting Desc Done")
-					return nil
-				}),
-				chromedp.InnerHTML(`//div[@id="vjs-desc"]`, &html),
-				chromedp.Text(`//span[@id="vjs-cn"]`, &company),
-			); err != nil {
-				log.Printf("Node %d failed.", index)
-				continue
-			}
-
-			ic.ProcessData(html)
-			fmt.Println(company)
-		}
-		if err := chromedp.Run(ctx,
-			chromedp.WaitReady(sel),
-			chromedp.Click(sel, chromedp.NodeVisible),
-			chromedp.WaitNotPresent(sel),
-		); err != nil {
-			log.Println(err)
-		}
+	for i := 1; i <= 2; i++ {
+		sel = fmt.Sprintf("//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')][%d]", i)
+		err = page.FindByXPath(sel).Click()
+		err = page.NextWindow()
+		html, err = page.HTML()
+		//	err = page.NextWindow()
+		err = page.CloseWindow()
+		ic.ProcessData(html)
 	}
-
+	//err = agoutiDriver.Stop()
 }
 
 //ProcessData adds data to Crawler
 func (ic *IndeedCrawler) ProcessData(input string) {
 
 	data := strings.Split(input, " ")
-
+	fmt.Printf("%+v", input)
 	for _, item := range data {
 		if _, ok := ic.Data[strings.ToLower(item)]; ok {
 			ic.Data[strings.ToLower(item)]++
