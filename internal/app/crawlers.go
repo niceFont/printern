@@ -29,7 +29,7 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 		chromedp.WithLogf(log.Printf),
 	)
 
-	ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
+	ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
 
 	defer cancel()
 
@@ -37,6 +37,10 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate("https://de.indeed.com"),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			log.Println("Navigate Done")
+			return nil
+		}),
 		chromedp.WaitVisible(`#text-input-what`, chromedp.ByID),
 		chromedp.SetValue(`#text-input-what`, pr.JobTitle, chromedp.ByID),
 		chromedp.SetValue(`#text-input-where`, pr.JobLocation, chromedp.ByID),
@@ -46,15 +50,24 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 	}
 
 	fmt.Println("test")
-	foundNum := 0
 	var panels []*cdp.Node
-	for j := 2; j < 3; j++ {
+	var html string
+	var company string
+	for j := 2; j < 42; j++ {
 		fmt.Printf("Currently Fetching Page: %d\n\n", j-1)
 		sel := `//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')]`
 		if err := chromedp.Run(ctx,
 			chromedp.EmulateViewport(1920, 2000),
-			chromedp.WaitReady(`//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')][17]`),
-			chromedp.Nodes(sel, &panels),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				log.Println("Waiting Nodes")
+				return nil
+			}),
+			chromedp.WaitVisible(`//div[contains(concat(' ',normalize-space(@class),' '),' jobsearch-SerpJobCard ')]`),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				log.Println("Waiting Nodes Done")
+				return nil
+			}),
+			chromedp.Nodes(sel, &panels, chromedp.NodeVisible),
 		); err != nil {
 			log.Println(err)
 
@@ -63,26 +76,43 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 		sel = fmt.Sprintf(`//div[@class="pagination"]/a/span[text()="%d"]`, j)
 
 		for index, node := range panels {
-			var html string
-			var company string
+			if err := ctx.Err(); err != nil {
+				return
+			}
 			if err := chromedp.Run(ctx,
 				chromedp.EmulateViewport(1920, 2000),
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					log.Println("Clicking Nodes")
+					return nil
+				}),
 				chromedp.MouseClickNode(node),
-				chromedp.WaitVisible(`//div[@id="vjs-desc"]`),
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					log.Println("Clicking Nodes Done")
+					return nil
+				}),
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					log.Println("Waiting Desc")
+					return nil
+				}),
+				chromedp.WaitReady(`//div[@id="vjs-desc"]`),
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					log.Println("Waiting Desc Done")
+					return nil
+				}),
 				chromedp.InnerHTML(`//div[@id="vjs-desc"]`, &html),
 				chromedp.Text(`//span[@id="vjs-cn"]`, &company),
 			); err != nil {
 				log.Printf("Node %d failed.", index)
+				continue
 			}
 
 			ic.ProcessData(html)
 			fmt.Println(company)
-			foundNum = foundNum + 1
 		}
 		if err := chromedp.Run(ctx,
-			chromedp.WaitVisible(sel),
+			chromedp.WaitReady(sel),
 			chromedp.Click(sel, chromedp.NodeVisible),
-			chromedp.WaitNotPresent("body", chromedp.BySearch),
+			chromedp.WaitNotPresent(sel),
 		); err != nil {
 			log.Println(err)
 		}
@@ -92,19 +122,13 @@ func (ic *IndeedCrawler) Scrape(pr *PrinterRequest) {
 
 //ProcessData adds data to Crawler
 func (ic *IndeedCrawler) ProcessData(input string) {
-	var err error
-
-	defer func() {
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
 
 	data := strings.Split(input, " ")
 
 	for _, item := range data {
 		if _, ok := ic.Data[strings.ToLower(item)]; ok {
 			ic.Data[strings.ToLower(item)]++
+
 		}
 	}
 

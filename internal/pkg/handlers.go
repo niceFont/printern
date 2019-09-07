@@ -52,7 +52,6 @@ func PrinterHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params
 		return
 	}
 	log.Printf("Sending Response: %s", response)
-
 	w.Header().Set("Content-type", "application/json")
 	w.Write(response)
 }
